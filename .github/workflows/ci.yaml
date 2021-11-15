@@ -2,13 +2,7 @@ name : CI
 
 on:
   push:
-    branches:
-      - master
-      - 'v0.**'
   pull_request:
-    branches:
-      - master
-      - 'v0.**'
 
 env:
   NB_KERNEL: python
