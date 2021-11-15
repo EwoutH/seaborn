@@ -2,9 +2,13 @@ name : CI
 
 on:
   push:
-    branches: master
+    branches:
+      - master
+      - 'v0.**'
   pull_request:
-    branches: master
+    branches:
+      - master
+      - 'v0.**'
 
 env:
   NB_KERNEL: python
@@ -22,7 +26,7 @@ jobs:
       - name: Setup Python
         uses: actions/setup-python@v2
         with:
-          python-version: '3.9.x'
+          python-version: '3.9'
 
       - name: Install seaborn
         run: |
@@ -46,24 +50,24 @@ jobs:
     strategy:
       matrix:
 
-        python: ['3.7.x', '3.8.x', '3.9.x']
+        python: ['3.7', '3.8', '3.9']
         target: [test]
         install: [all]
         deps: [latest]
         backend: [agg]
 
         include:
-          - python: '3.7.x'
+          - python: '3.7'
             target: unittests
             install: all
             deps: pinned
             backend: agg
-          - python: '3.9.x'
+          - python: '3.9'
             target: unittests
             install: light
             deps: latest
             backend: agg
-          - python: '3.9.x'
+          - python: '3.9'
             target: test
             install: all
             deps: latest
@@ -97,5 +101,5 @@ jobs:
           $PREFIX make ${{ matrix.target }}
 
       - name: Upload coverage
-        uses: codecov/codecov-action@v1
+        uses: codecov/codecov-action@v2
         if: ${{ success() }}
