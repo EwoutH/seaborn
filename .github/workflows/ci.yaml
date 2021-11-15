@@ -42,7 +42,7 @@ jobs:
       - uses: actions/upload-artifact@v2
         with:
           name: docs
-          path: docs
+          path: doc
 
   run-tests:
     runs-on: ubuntu-latest
