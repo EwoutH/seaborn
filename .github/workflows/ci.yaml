@@ -39,6 +39,10 @@ jobs:
           make -C doc -j `nproc` notebooks
           make -C doc html
 
+      - uses: actions/upload-artifact@v2
+        with:
+          name: docs
+          path: docs
 
   run-tests:
     runs-on: ubuntu-latest
