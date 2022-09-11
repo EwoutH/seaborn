@@ -4,6 +4,7 @@ import re
 import inspect
 import warnings
 import colorsys
+from contextlib import contextmanager
 from urllib.request import urlopen, urlretrieve
 
 import numpy as np
@@ -99,7 +100,7 @@ def _default_color(method, hue, color, kws):
 
     elif method.__name__ == "plot":
 
-        scout, = method([], [], **kws)
+        scout, = method([], [], scalex=False, scaley=False, **kws)
         color = scout.get_color()
         scout.remove()
 
@@ -597,23 +598,23 @@ def load_dataset(name, cache=True, data_home=None, **kws):
         df["time"] = pd.Categorical(df["time"], ["Lunch", "Dinner"])
         df["smoker"] = pd.Categorical(df["smoker"], ["Yes", "No"])
 
-    if name == "flights":
+    elif name == "flights":
         months = df["month"].str[:3]
         df["month"] = pd.Categorical(months, months.unique())
 
-    if name == "exercise":
+    elif name == "exercise":
         df["time"] = pd.Categorical(df["time"], ["1 min", "15 min", "30 min"])
         df["kind"] = pd.Categorical(df["kind"], ["rest", "walking", "running"])
         df["diet"] = pd.Categorical(df["diet"], ["no fat", "low fat"])
 
-    if name == "titanic":
+    elif name == "titanic":
         df["class"] = pd.Categorical(df["class"], ["First", "Second", "Third"])
         df["deck"] = pd.Categorical(df["deck"], list("ABCDEFG"))
 
-    if name == "penguins":
+    elif name == "penguins":
         df["sex"] = df["sex"].str.title()
 
-    if name == "diamonds":
+    elif name == "diamonds":
         df["color"] = pd.Categorical(
             df["color"], ["D", "E", "F", "G", "H", "I", "J"],
         )
@@ -627,6 +628,12 @@ def load_dataset(name, cache=True, data_home=None, **kws):
     elif name == "taxis":
         df["pickup"] = pd.to_datetime(df["pickup"])
         df["dropoff"] = pd.to_datetime(df["dropoff"])
+
+    elif name == "seaice":
+        df["Date"] = pd.to_datetime(df["Date"])
+
+    elif name == "dowjones":
+        df["Date"] = pd.to_datetime(df["Date"])
 
     return df
 
@@ -782,7 +789,7 @@ def _assign_default_kwargs(kws, call_func, source_func):
     # This exists so that axes-level functions and figure-level functions can
     # both call a Plotter method while having the default kwargs be defined in
     # the signature of the axes-level function.
-    # An alternative would be to  have a decorator on the method that sets its
+    # An alternative would be to have a decorator on the method that sets its
     # defaults based on those defined in the axes-level function.
     # Then the figure-level function would not need to worry about defaults.
     # I am not sure which is better.
@@ -797,7 +804,12 @@ def _assign_default_kwargs(kws, call_func, source_func):
 
 
 def adjust_legend_subtitles(legend):
-    """Make invisible-handle "subtitles" entries look more like titles."""
+    """
+    Make invisible-handle "subtitles" entries look more like titles.
+
+    Note: This function is not part of the public API and may be changed or removed.
+
+    """
     # Legend title not in rcParams until 3.0
     font_size = plt.rcParams.get("legend.title_fontsize", None)
     hpackers = legend.findobj(mpl.offsetbox.VPacker)[0].get_children()
@@ -828,9 +840,28 @@ def _deprecate_ci(errorbar, ci):
         else:
             errorbar = ("ci", ci)
         msg = (
-            "The `ci` parameter is deprecated; "
-            f"use `errorbar={repr(errorbar)}` for same effect."
+            "\n\nThe `ci` parameter is deprecated. "
+            f"Use `errorbar={repr(errorbar)}` for the same effect.\n"
         )
-        warnings.warn(msg, UserWarning)
+        warnings.warn(msg, FutureWarning, stacklevel=3)
 
     return errorbar
+
+
+@contextmanager
+def _disable_autolayout():
+    """Context manager for preventing rc-controlled auto-layout behavior."""
+    # This is a workaround for an issue in matplotlib, for details see
+    # https://github.com/mwaskom/seaborn/issues/2914
+    # The only affect of this rcParam is to set the default value for
+    # layout= in plt.figure, so we could just do that instead.
+    # But then we would need to own the complexity of the transition
+    # from tight_layout=True -> layout="tight". This seems easier,
+    # but can be removed when (if) that is simpler on the matplotlib side,
+    # or if the layout algorithms are improved to handle figure legends.
+    orig_val = mpl.rcParams["figure.autolayout"]
+    try:
+        mpl.rcParams["figure.autolayout"] = False
+        yield
+    finally:
+        mpl.rcParams["figure.autolayout"] = orig_val

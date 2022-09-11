@@ -1,20 +1,23 @@
 from __future__ import annotations
 from dataclasses import dataclass
+from typing import ClassVar, Callable, Optional, Union
 
 import numpy as np
+from pandas import DataFrame
 
 from seaborn._core.groupby import GroupBy
-
-from typing import TYPE_CHECKING
-if TYPE_CHECKING:
-    from typing import Optional
-    from pandas import DataFrame
+from seaborn._core.scales import Scale
 
 
 @dataclass
 class Move:
+    """Base class for objects that apply simple positional transforms."""
 
-    def __call__(self, data: DataFrame, groupby: GroupBy, orient: str) -> DataFrame:
+    group_by_orient: ClassVar[bool] = True
+
+    def __call__(
+        self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale],
+    ) -> DataFrame:
         raise NotImplementedError
 
 
@@ -32,7 +35,9 @@ class Jitter(Move):
     # TODO what is the best way to have a reasonable default?
     # The problem is that "reasonable" seems dependent on the mark
 
-    def __call__(self, data: DataFrame, groupby: GroupBy, orient: str) -> DataFrame:
+    def __call__(
+        self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale],
+    ) -> DataFrame:
 
         # TODO is it a problem that GroupBy is not used for anything here?
         # Should we type it as optional?
@@ -61,13 +66,17 @@ class Dodge(Move):
     """
     Displacement and narrowing of overlapping marks along orientation axis.
     """
-    empty: str = "keep"  # keep, drop, fill
+    empty: str = "keep"  # Options: keep, drop, fill
     gap: float = 0
 
     # TODO accept just a str here?
+    # TODO should this always be present?
+    # TODO should the default be an "all" singleton?
     by: Optional[list[str]] = None
 
-    def __call__(self, data: DataFrame, groupby: GroupBy, orient: str) -> DataFrame:
+    def __call__(
+        self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale],
+    ) -> DataFrame:
 
         grouping_vars = [v for v in groupby.order if v in data]
         groups = groupby.agg(data, {"width": "max"})
@@ -117,7 +126,7 @@ class Stack(Move):
     """
     Displacement of overlapping bar or area marks along the value axis.
     """
-    # TODO center? (or should this be a different move?)
+    # TODO center? (or should this be a different move, eg. Stream())
 
     def _stack(self, df, orient):
 
@@ -137,9 +146,12 @@ class Stack(Move):
 
         return df
 
-    def __call__(self, data: DataFrame, groupby: GroupBy, orient: str) -> DataFrame:
+    def __call__(
+        self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale],
+    ) -> DataFrame:
 
         # TODO where to ensure that other semantic variables are sorted properly?
+        # TODO why are we not using the passed in groupby here?
         groupers = ["col", "row", orient]
         return GroupBy(groupers).apply(data, self._stack, orient)
 
@@ -152,9 +164,51 @@ class Shift(Move):
     x: float = 0
     y: float = 0
 
-    def __call__(self, data: DataFrame, groupby: GroupBy, orient: str) -> DataFrame:
+    def __call__(
+        self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale],
+    ) -> DataFrame:
 
         data = data.copy(deep=False)
         data["x"] = data["x"] + self.x
         data["y"] = data["y"] + self.y
         return data
+
+
+@dataclass
+class Norm(Move):
+    """
+    Divisive scaling on the value axis after aggregating within groups.
+    """
+
+    func: Union[Callable, str] = "max"
+    where: Optional[str] = None
+    by: Optional[list[str]] = None
+    percent: bool = False
+
+    group_by_orient: ClassVar[bool] = False
+
+    def _norm(self, df, var):
+
+        if self.where is None:
+            denom_data = df[var]
+        else:
+            denom_data = df.query(self.where)[var]
+        df[var] = df[var] / denom_data.agg(self.func)
+
+        if self.percent:
+            df[var] = df[var] * 100
+
+        return df
+
+    def __call__(
+        self, data: DataFrame, groupby: GroupBy, orient: str, scales: dict[str, Scale],
+    ) -> DataFrame:
+
+        other = {"x": "y", "y": "x"}[orient]
+        return groupby.apply(data, self._norm, other)
+
+
+# TODO
+# @dataclass
+# class Ridge(Move):
+#     ...

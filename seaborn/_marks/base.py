@@ -1,19 +1,25 @@
 from __future__ import annotations
 from dataclasses import dataclass, fields, field
+import textwrap
+from typing import Any, Callable, Union
+from collections.abc import Generator
 
 import numpy as np
 import pandas as pd
 import matplotlib as mpl
 
-from seaborn._core.properties import PROPERTIES, Property
-
-from typing import Any, Callable, Union
-from collections.abc import Generator
 from numpy import ndarray
 from pandas import DataFrame
 from matplotlib.artist import Artist
-from seaborn._core.properties import RGBATuple, DashPattern, DashPatternWithOffset
+
 from seaborn._core.scales import Scale
+from seaborn._core.properties import (
+    PROPERTIES,
+    Property,
+    RGBATuple,
+    DashPattern,
+    DashPatternWithOffset,
+)
 
 
 class Mappable:
@@ -22,6 +28,7 @@ class Mappable:
         val: Any = None,
         depend: str | None = None,
         rc: str | None = None,
+        auto: bool = False,
         grouping: bool = True,
     ):
         """
@@ -35,6 +42,8 @@ class Mappable:
             Use the value of this feature as the default.
         rc : str
             Use the value of this rcParam as the default.
+        auto : bool
+            The default value will depend on other parameters at compile time.
         grouping : bool
             If True, use the mapped variable to define groups.
 
@@ -47,6 +56,7 @@ class Mappable:
         self._val = val
         self._rc = rc
         self._depend = depend
+        self._auto = auto
         self._grouping = grouping
 
     def __repr__(self):
@@ -57,6 +67,8 @@ class Mappable:
             s = f"<depend:{self._depend}>"
         elif self._rc is not None:
             s = f"<rc:{self._rc}>"
+        elif self._auto:
+            s = "<auto>"
         else:
             s = "<undefined>"
         return s
@@ -89,6 +101,7 @@ MappableStyle = Union[str, DashPattern, DashPatternWithOffset, Mappable]
 
 @dataclass
 class Mark:
+    """Base class for objects that visually represent data."""
 
     artist_kws: dict = field(default_factory=dict)
 
@@ -184,27 +197,11 @@ class Mark:
         # TODO rethink this to map from scale type to "DV priority" and use that?
         # e.g. Nominal > Discrete > Continuous
 
-        x_type = None if "x" not in scales else scales["x"].scale_type
-        y_type = None if "y" not in scales else scales["y"].scale_type
+        x = 0 if "x" not in scales else scales["x"]._priority
+        y = 0 if "y" not in scales else scales["y"]._priority
 
-        if x_type is None:
+        if y > x:
             return "y"
-
-        elif y_type is None:
-            return "x"
-
-        elif x_type != "nominal" and y_type == "nominal":
-            return "y"
-
-        elif x_type != "continuous" and y_type == "continuous":
-
-            # TODO should we try to orient based on number of unique values?
-
-            return "x"
-
-        elif x_type == "continuous" and y_type != "continuous":
-            return "y"
-
         else:
             return "x"
 
@@ -261,7 +258,11 @@ def resolve_color(
 
     """
     color = mark._resolve(data, f"{prefix}color", scales)
-    alpha = mark._resolve(data, f"{prefix}alpha", scales)
+
+    if f"{prefix}alpha" in mark._mappable_props:
+        alpha = mark._resolve(data, f"{prefix}alpha", scales)
+    else:
+        alpha = mark._resolve(data, "alpha", scales)
 
     def visible(x, axis=None):
         """Detect "invisible" colors to set alpha appropriately."""
@@ -286,9 +287,23 @@ def resolve_color(
     # (i.e. set fillalpha to 0 when fill=False)
 
 
-class MultiMark(Mark):
+def document_properties(mark):
 
-    # TODO implement this as a way to wrap multiple marks (e.g. line and ribbon)
-    # It should be fairly lightweight, the main thing is to expose the union
-    # of each mark's parameters and then to call them sequentially in _plot.
-    pass
+    properties = [f.name for f in fields(mark) if isinstance(f.default, Mappable)]
+    text = [
+        "",
+        "    This mark defines the following properties:",
+        textwrap.fill(
+            ", ".join([f"|{p}|" for p in properties]),
+            width=78, initial_indent=" " * 8, subsequent_indent=" " * 8,
+        ),
+    ]
+
+    docstring_lines = mark.__doc__.split("\n")
+    new_docstring = "\n".join([
+        *docstring_lines[:2],
+        *text,
+        *docstring_lines[2:],
+    ])
+    mark.__doc__ = new_docstring
+    return mark

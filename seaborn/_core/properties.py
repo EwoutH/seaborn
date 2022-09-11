@@ -8,7 +8,7 @@ import matplotlib as mpl
 from matplotlib.colors import to_rgb, to_rgba, to_rgba_array
 from matplotlib.path import Path
 
-from seaborn._core.scales import ScaleSpec, Nominal, Continuous, Temporal
+from seaborn._core.scales import Scale, Nominal, Continuous, Temporal
 from seaborn._core.rules import categorical_order, variable_type
 from seaborn._compat import MarkerStyle
 from seaborn.palettes import QUAL_PALETTES, color_palette, blend_palette
@@ -59,7 +59,7 @@ class Property:
             variable = self.__class__.__name__.lower()
         self.variable = variable
 
-    def default_scale(self, data: Series) -> ScaleSpec:
+    def default_scale(self, data: Series) -> Scale:
         """Given data, initialize appropriate scale class."""
         # TODO allow variable_type to be "boolean" if that's a scale?
         # TODO how will this handle data with units that can be treated as numeric
@@ -75,7 +75,7 @@ class Property:
         else:
             return Nominal()
 
-    def infer_scale(self, arg: Any, data: Series) -> ScaleSpec:
+    def infer_scale(self, arg: Any, data: Series) -> Scale:
         """Given data and a scaling argument, initialize appropriate scale class."""
         # TODO put these somewhere external for validation
         # TODO putting this here won't pick it up if subclasses define infer_scale
@@ -86,7 +86,7 @@ class Property:
         if isinstance(arg, str):
             if any(arg.startswith(k) for k in trans_args):
                 # TODO validate numeric type? That should happen centrally somewhere
-                return Continuous(transform=arg)
+                return Continuous(trans=arg)
             else:
                 msg = f"Unknown magic arg for {self.variable} scale: '{arg}'."
                 raise ValueError(msg)
@@ -96,7 +96,7 @@ class Property:
             raise TypeError(msg)
 
     def get_mapping(
-        self, scale: ScaleSpec, data: Series
+        self, scale: Scale, data: Series
     ) -> Callable[[ArrayLike], ArrayLike]:
         """Return a function that maps from data domain to property range."""
         def identity(x):
@@ -176,7 +176,7 @@ class IntervalProperty(Property):
         """Transform applied to results of mapping that returns to native values."""
         return values
 
-    def infer_scale(self, arg: Any, data: Series) -> ScaleSpec:
+    def infer_scale(self, arg: Any, data: Series) -> Scale:
         """Given data and a scaling argument, initialize appropriate scale class."""
 
         # TODO infer continuous based on log/sqrt etc?
@@ -192,7 +192,7 @@ class IntervalProperty(Property):
             return Continuous(arg)
 
     def get_mapping(
-        self, scale: ScaleSpec, data: ArrayLike
+        self, scale: Scale, data: ArrayLike
     ) -> Callable[[ArrayLike], ArrayLike]:
         """Return a function that maps from data domain to property range."""
         if isinstance(scale, Nominal):
@@ -259,9 +259,6 @@ class IntervalProperty(Property):
 class PointSize(IntervalProperty):
     """Size (diameter) of a point mark, in points, with scaling by area."""
     _default_range = 2, 8  # TODO use rcparams?
-    # TODO N.B. both Scatter and Dot use this but have different expected sizes
-    # Is that something we need to handle? Or assume Dot size rarely scaled?
-    # Also will Line marks have a PointSize property?
 
     def _forward(self, values):
         """Square native values to implement linear scaling of point area."""
@@ -312,6 +309,7 @@ class ObjectProperty(Property):
     normed = False
 
     # Object representing null data, should appear invisible when drawn by matplotlib
+    # Note that we now drop nulls in Plot._plot_layer and thus may not need this
     null_value: Any = None
 
     def _default_values(self, n: int) -> list:
@@ -324,7 +322,7 @@ class ObjectProperty(Property):
         return Nominal(arg)
 
     def get_mapping(
-        self, scale: ScaleSpec, data: Series,
+        self, scale: Scale, data: Series,
     ) -> Callable[[ArrayLike], list]:
         """Define mapping as lookup into list of object values."""
         order = getattr(scale, "order", None)
@@ -531,7 +529,7 @@ class Color(Property):
         else:
             return to_rgba_array(colors)[:, :3]
 
-    def infer_scale(self, arg: Any, data: Series) -> ScaleSpec:
+    def infer_scale(self, arg: Any, data: Series) -> Scale:
         # TODO when inferring Continuous without data, verify type
 
         # TODO need to rethink the variable type system
@@ -616,7 +614,7 @@ class Color(Property):
         return mapping
 
     def get_mapping(
-        self, scale: ScaleSpec, data: Series
+        self, scale: Scale, data: Series
     ) -> Callable[[ArrayLike], ArrayLike]:
         """Return a function that maps from data domain to color values."""
         # TODO what is best way to do this conditional?
@@ -689,13 +687,13 @@ class Fill(Property):
         """Given data, initialize appropriate scale class."""
         return Nominal()
 
-    def infer_scale(self, arg: Any, data: Series) -> ScaleSpec:
+    def infer_scale(self, arg: Any, data: Series) -> Scale:
         """Given data and a scaling argument, initialize appropriate scale class."""
         # TODO infer Boolean where possible?
         return Nominal(arg)
 
     def get_mapping(
-        self, scale: ScaleSpec, data: Series
+        self, scale: Scale, data: Series
     ) -> Callable[[ArrayLike], ArrayLike]:
         """Return a function that maps each data value to True or False."""
         # TODO categorical_order is going to return [False, True] for booleans,
@@ -720,7 +718,11 @@ class Fill(Property):
             raise TypeError(msg)
 
         def mapping(x):
-            return np.take(values, np.asarray(x, np.intp))
+            ixs = np.asarray(x, np.intp)
+            return [
+                values[ix] if np.isfinite(x_i) else False
+                for x_i, ix in zip(x, ixs)
+            ]
 
         return mapping
 

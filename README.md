@@ -1,4 +1,4 @@
-<img src="doc/_static/logo-wide-lightbg.svg"><br>
+<img src="https://raw.githubusercontent.com/mwaskom/seaborn/master/doc/_static/logo-wide-lightbg.svg"><br>
 
 --------------------------------------
 
@@ -30,7 +30,7 @@ Dependencies
 
 Seaborn supports Python 3.7+ and no longer supports Python 2.
 
-Installation requires [numpy](https://numpy.org/), [pandas](https://pandas.pydata.org/), and [matplotlib](https://matplotlib.org/). Some functions will optionally use [scipy](https://www.scipy.org/) and/or [statsmodels](https://www.statsmodels.org/) if they are available.
+Installation requires [numpy](https://numpy.org/), [pandas](https://pandas.pydata.org/), and [matplotlib](https://matplotlib.org/). Some advanced statistical functionality requires [scipy](https://www.scipy.org/) and/or [statsmodels](https://www.statsmodels.org/).
 
 
 Installation
@@ -40,15 +40,15 @@ The latest stable release (and required dependencies) can be installed from PyPI
 
     pip install seaborn
 
-It is also possible to include optional dependencies (only relevant for v0.12+):
+It is also possible to include optional statistical dependencies (only relevant for v0.12+):
 
-    pip install seaborn[all]
+    pip install seaborn[stats]
 
 Seaborn can also be installed with conda:
 
     conda install seaborn
 
-Note that the main anaconda repository typically lags PyPI in adding new releases, but conda-forge (`-c conda-forge`) typically updates quickly.
+Note that the main anaconda repository lags PyPI in adding new releases, but conda-forge (`-c conda-forge`) typically updates quickly.
 
 Citing
 ------
@@ -58,7 +58,7 @@ A paper describing seaborn has been published in the [Journal of Open Source Sof
 Testing
 -------
 
-Testing seaborn requires installing additional packages listed in `ci/utils.txt`.
+Testing seaborn requires installing additional dependencies; they can be installed with the `dev` extra (e.g., `pip install .[dev]`).
 
 To test the code, run `make test` in the source directory. This will exercise both the unit tests and docstring examples (using [pytest](https://docs.pytest.org/)) and generate a coverage report.
 

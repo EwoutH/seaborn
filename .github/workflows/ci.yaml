@@ -2,7 +2,7 @@ name: CI
 
 on:
   push:
-    branches: [master, nextgen/**]
+    branches: [master, v0.*]
   pull_request:
     branches: master
   workflow_dispatch:
@@ -21,16 +21,14 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: "3.10"
-          cache: "pip"
 
       - name: Install seaborn
         run: |
           pip install --upgrade pip
-          pip install .[all] -r ci/utils.txt
+          pip install .[stats,docs]
 
-      - name: Install doc tools
+      - name: Install pandoc
         run: |
-          pip install -r doc/requirements.txt
           sudo apt-get install pandoc
 
       - name: Build docs
@@ -46,26 +44,18 @@ jobs:
       matrix:
         python: ["3.7", "3.8", "3.9", "3.10"]
         target: [test]
-        install: [all]
+        install: [full]
         deps: [latest]
-        backend: [agg]
 
         include:
           - python: "3.7"
             target: unittests
-            install: all
+            install: full
             deps: pinned
-            backend: agg
           - python: "3.10"
             target: unittests
             install: light
             deps: latest
-            backend: agg
-          - python: "3.10"
-            target: test
-            install: all
-            deps: latest
-            backend: tkagg
 
     steps:
       - uses: actions/checkout@v3
@@ -74,24 +64,19 @@ jobs:
         uses: actions/setup-python@v3
         with:
           python-version: ${{ matrix.python }}
-          cache: "pip"
 
       - name: Install seaborn
         run: |
           pip install --upgrade pip wheel
-          if [[ ${{matrix.install}} == 'all' ]]; then EXTRAS='[all]'; fi
+          if [[ ${{matrix.install}} == 'full' ]]; then EXTRAS=',stats'; fi
           if [[ ${{matrix.deps }} == 'pinned' ]]; then DEPS='-r ci/deps_pinned.txt'; fi
-          pip install .$EXTRAS $DEPS -r ci/utils.txt
+          pip install .[dev$EXTRAS] $DEPS
 
       - name: Cache datastes
         run: python ci/cache_test_datasets.py
 
       - name: Run tests
-        env:
-          MPLBACKEND: ${{ matrix.backend }}
-        run: |
-          if [[ ${{ matrix.backend }} == 'tkagg' ]]; then PREFIX='xvfb-run -a'; fi
-          $PREFIX make ${{ matrix.target }}
+        run: make ${{ matrix.target }}
 
       - name: Upload coverage
         uses: codecov/codecov-action@v2

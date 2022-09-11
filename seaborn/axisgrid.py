@@ -10,8 +10,11 @@ import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 from ._oldcore import VectorPlotter, variable_type, categorical_order
+from ._compat import share_axis
 from . import utils
-from .utils import _check_argument, adjust_legend_subtitles, _draw_figure
+from .utils import (
+    adjust_legend_subtitles, _check_argument, _draw_figure, _disable_autolayout
+)
 from .palettes import color_palette, blend_palette
 from ._docstrings import (
     DocstringComponents,
@@ -50,6 +53,35 @@ class _BaseGrid:
         """Access the :class:`matplotlib.figure.Figure` object underlying the grid."""
         return self._figure
 
+    def apply(self, func, *args, **kwargs):
+        """
+        Pass the grid to a user-supplied function and return self.
+
+        The `func` must accept an object of this type for its first
+        positional argument. Additional arguments are passed through.
+        The return value of `func` is ignored; this method returns self.
+        See the `pipe` method if you want the return value.
+
+        Added in v0.12.0.
+
+        """
+        func(self, *args, **kwargs)
+        return self
+
+    def pipe(self, func, *args, **kwargs):
+        """
+        Pass the grid to a user-supplied function and return its value.
+
+        The `func` must accept an object of this type for its first
+        positional argument. Additional arguments are passed through.
+        The return value of `func` becomes the return value of this method.
+        See the `apply` method if you want to return self instead.
+
+        Added in v0.12.0.
+
+        """
+        return func(self, *args, **kwargs)
+
     def savefig(self, *args, **kwargs):
         """
         Save an image of the plot.
@@ -84,6 +116,7 @@ class Grid(_BaseGrid):
         if self._tight_layout_pad is not None:
             kwargs.setdefault("pad", self._tight_layout_pad)
         self._figure.tight_layout(*args, **kwargs)
+        return self
 
     def add_legend(self, legend_data=None, title=None, label_order=None,
                    adjust_subtitles=False, **kwargs):
@@ -246,6 +279,27 @@ class Grid(_BaseGrid):
         except AttributeError:
             return None
 
+    def tick_params(self, axis='both', **kwargs):
+        """Modify the ticks, tick labels, and gridlines.
+
+        Parameters
+        ----------
+        axis : {'x', 'y', 'both'}
+            The axis on which to apply the formatting.
+        kwargs : keyword arguments
+            Additional keyword arguments to pass to
+            :meth:`matplotlib.axes.Axes.tick_params`.
+
+        Returns
+        -------
+        self : Grid instance
+            Returns self for easy chaining.
+
+        """
+        for ax in self.figure.axes:
+            ax.tick_params(axis=axis, **kwargs)
+        return self
+
 
 _facet_docs = dict(
 
@@ -316,17 +370,10 @@ class FacetGrid(Grid):
         row_order=None, col_order=None, hue_order=None, hue_kws=None,
         dropna=False, legend_out=True, despine=True,
         margin_titles=False, xlim=None, ylim=None, subplot_kws=None,
-        gridspec_kws=None, size=None,
+        gridspec_kws=None,
     ):
 
         super().__init__()
-
-        # Handle deprecations
-        if size is not None:
-            height = size
-            msg = ("The `size` parameter has been renamed to `height`; "
-                   "please update your code.")
-            warnings.warn(msg, UserWarning)
 
         # Determine the hue facet layer information
         hue_var = hue
@@ -396,8 +443,7 @@ class FacetGrid(Grid):
 
         # --- Initialize the subplot grid
 
-        # Disable autolayout so legend_out works properly
-        with mpl.rc_context({"figure.autolayout": False}):
+        with _disable_autolayout():
             fig = plt.figure(figsize=figsize)
 
         if col_wrap is None:
@@ -1013,6 +1059,8 @@ class FacetGrid(Grid):
         if y is not None:
             self.map(plt.axhline, y=y, **line_kws)
 
+        return self
+
     # ------ Properties that are part of the public API and documented by Sphinx
 
     @property
@@ -1127,7 +1175,7 @@ class PairGrid(Grid):
     This object maps each variable in a dataset onto a column and row in a
     grid of multiple axes. Different axes-level plotting functions can be
     used to draw bivariate plots in the upper and lower triangles, and the
-    the marginal distribution of each variable can be shown on the diagonal.
+    marginal distribution of each variable can be shown on the diagonal.
 
     Several different common plots can be generated in a single line using
     :func:`pairplot`. Use :class:`PairGrid` when you need more flexibility.
@@ -1138,7 +1186,7 @@ class PairGrid(Grid):
     def __init__(
         self, data, *, hue=None, vars=None, x_vars=None, y_vars=None,
         hue_order=None, palette=None, hue_kws=None, corner=False, diag_sharey=True,
-        height=2.5, aspect=1, layout_pad=.5, despine=True, dropna=False, size=None
+        height=2.5, aspect=1, layout_pad=.5, despine=True, dropna=False,
     ):
         """Initialize the plot figure and PairGrid object.
 
@@ -1193,13 +1241,6 @@ class PairGrid(Grid):
 
         super().__init__()
 
-        # Handle deprecations
-        if size is not None:
-            height = size
-            msg = ("The `size` parameter has been renamed to `height`; "
-                   "please update your code.")
-            warnings.warn(UserWarning(msg))
-
         # Sort out the variables that define the grid
         numeric_cols = self._find_numeric_cols(data)
         if hue in numeric_cols:
@@ -1229,8 +1270,7 @@ class PairGrid(Grid):
         # Create the figure and the array of subplots
         figsize = len(x_vars) * height * aspect, len(y_vars) * height
 
-        # Disable autolayout so legend_out works
-        with mpl.rc_context({"figure.autolayout": False}):
+        with _disable_autolayout():
             fig = plt.figure(figsize=figsize)
 
         axes = fig.subplots(len(y_vars), len(x_vars),
@@ -1429,11 +1469,8 @@ class PairGrid(Grid):
                             # when drawing a corner plot?
 
             if self.diag_sharey and diag_axes:
-                # This may change in future matplotlibs
-                # See https://github.com/matplotlib/matplotlib/pull/9923
-                group = diag_axes[0].get_shared_y_axes()
                 for ax in diag_axes[1:]:
-                    group.join(ax, diag_axes[0])
+                    share_axis(diag_axes[0], ax, "y")
 
             self.diag_vars = np.array(diag_vars, np.object_)
             self.diag_axes = np.array(diag_axes, np.object_)
@@ -1565,9 +1602,10 @@ class PairGrid(Grid):
         else:
             hue = data.get(self._hue_var)
 
-        kwargs.setdefault("hue", hue)
-        kwargs.setdefault("hue_order", self._hue_order)
-        kwargs.setdefault("palette", self._orig_palette)
+        if "hue" not in kwargs:
+            kwargs.update({
+                "hue": hue, "hue_order": self._hue_order, "palette": self._orig_palette,
+            })
         func(x=x, y=y, **kwargs)
 
         self._update_legend_data(ax)
@@ -1622,8 +1660,6 @@ class PairGrid(Grid):
             ax.set_xlabel(label)
         for ax, label in zip(self.axes[:, 0], self.y_vars):
             ax.set_ylabel(label)
-        if self._corner:
-            self.axes[0, 0].set_ylabel("")
 
     def _find_numeric_cols(self, data):
         """Find which variables in a DataFrame are numeric."""
@@ -1644,17 +1680,11 @@ class JointGrid(_BaseGrid):
 
     def __init__(
         self, data=None, *,
-        x=None, y=None,
+        x=None, y=None, hue=None,
         height=6, ratio=5, space=.2,
-        dropna=False, xlim=None, ylim=None, size=None, marginal_ticks=False,
-        hue=None, palette=None, hue_order=None, hue_norm=None,
+        palette=None, hue_order=None, hue_norm=None,
+        dropna=False, xlim=None, ylim=None, marginal_ticks=False,
     ):
-        # Handle deprecations
-        if size is not None:
-            height = size
-            msg = ("The `size` parameter has been renamed to `height`; "
-                   "please update your code.")
-            warnings.warn(msg, UserWarning)
 
         # Set up the subplot grid
         f = plt.figure(figsize=(height, height))
@@ -2158,12 +2188,9 @@ def jointplot(
     from .regression import regplot, residplot
     from .distributions import histplot, kdeplot, _freedman_diaconis_bins
 
-    # Handle deprecations
-    if "size" in kwargs:
-        height = kwargs.pop("size")
-        msg = ("The `size` parameter has been renamed to `height`; "
-               "please update your code.")
-        warnings.warn(msg, UserWarning)
+    if kwargs.pop("ax", None) is not None:
+        msg = "Ignoring `ax`; jointplot is a figure-level function."
+        warnings.warn(msg, UserWarning, stacklevel=2)
 
     # Set up empty default kwarg dicts
     joint_kws = {} if joint_kws is None else joint_kws.copy()
@@ -2240,7 +2267,7 @@ def jointplot(
     elif kind.startswith("hist"):
 
         # TODO process pair parameters for bins, etc. and pass
-        # to both jount and marginal plots
+        # to both joint and marginal plots
 
         joint_kws.setdefault("color", color)
         grid.plot_joint(histplot, **joint_kws)
@@ -2305,6 +2332,9 @@ def jointplot(
         marginal_kws.setdefault("color", color)
         histplot(x=x, hue=hue, ax=grid.ax_marg_x, **marginal_kws)
         histplot(y=y, hue=hue, ax=grid.ax_marg_y, **marginal_kws)
+
+    # Make the main axes active in the matplotlib state machine
+    plt.sca(grid.ax_joint)
 
     return grid
 
